@@ -1,0 +1,6 @@
+export type Shape={id:string;type:'brush'|'rect'|'text'|'pin';x:number;y:number;points?:number[];width?:number;height?:number;text?:string;color:string;stroke:number;opacity:number};
+export type MapData={id:string;name:string;width:number;height:number;background:string|null;backgroundOpacity:number;backgroundScale:number;backgroundX:number;backgroundY:number;shapes:Shape[]};
+export type Character={id:string;name:string;alias:string;gender:string;age:string;job:string;faction:string;appearance:string;personality:string;motivation:string;secret:string;backstory:string;notes:string;intro:string;tags:string;images:string[];graphX?:number;graphY?:number};
+export type Relation={id:string;from:string;to:string;name:string;color:string};
+export type Project={version:number;name:string;maps:MapData[];characters:Character[];relations:Relation[]};
+declare global {interface Window {forge:{create:()=>Promise<{dir:string;data:Project}|null>;open:()=>Promise<{dir:string;data:Project}|null>;openPath:(p:string)=>Promise<{dir:string;data:Project}>;recent:()=>Promise<string[]>;save:(d:Project)=>Promise<boolean>;asset:()=>Promise<string|null>;assetData:(n:string)=>Promise<string>;onClose:(f:()=>void)=>void;closeReady:()=>void}}}

@@ -1,0 +1,2 @@
+const {contextBridge,ipcRenderer}=require('electron');
+contextBridge.exposeInMainWorld('forge',{create:()=>ipcRenderer.invoke('new'),open:()=>ipcRenderer.invoke('open'),openPath:p=>ipcRenderer.invoke('open-path',p),recent:()=>ipcRenderer.invoke('recent'),save:d=>ipcRenderer.invoke('save',d),asset:()=>ipcRenderer.invoke('asset'),assetData:n=>ipcRenderer.invoke('asset-data',n),onClose:f=>ipcRenderer.on('before-close',f),closeReady:()=>ipcRenderer.send('close-ready')});
