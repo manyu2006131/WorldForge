@@ -1,0 +1,67 @@
+name: Build WorldForge
+on:
+  push:
+    branches: [main]
+    paths: ['src/**', 'electron/**', 'ios/**', 'scripts/**', 'package*.json', '.github/workflows/build-apps.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run dist:win -- --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WorldForge-Windows
+          path: release/WorldForge-Windows.exe
+          if-no-files-found: error
+  ios:
+    runs-on: macos-15
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: brew install xcodegen
+      - run: bash scripts/build-ios.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WorldForge-iOS-unsigned
+          path: release/WorldForge-iOS-unsigned.ipa
+          if-no-files-found: error
+  release:
+    needs: [windows, ios]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+      - name: Publish binaries
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          BUILD_SHA: ${{ github.sha }}
+          BUILD_ID: ${{ github.run_number }}
+          BUILD_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          tag="worldforge-build-${BUILD_ID}-${BUILD_ATTEMPT}"
+          gh release create "$tag" release/WorldForge-Windows.exe release/WorldForge-iOS-unsigned.ipa \
+            --target "$BUILD_SHA" --title "WorldForge build ${BUILD_ID}" \
+            --notes "Windows portable executable and unsigned iOS IPA. The IPA requires signing before installation."

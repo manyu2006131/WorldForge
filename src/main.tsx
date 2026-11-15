@@ -1,24 +1,170 @@
-import React,{useEffect,useRef,useState} from 'react';import{createRoot}from'react-dom/client';import{Stage,Layer,Rect,Line,Text,Circle,Image as KImage,Group}from'react-konva';import{useStore,uid}from './store';import type{Character,MapData,Shape}from './types';import './style.css';
-function Img({name,...props}:{name:string|null;[key:string]:any}){const [image,setImage]=useState<HTMLImageElement>();useEffect(()=>{let active=true;setImage(undefined);if(name)window.forge.assetData(name).then(url=>{const img=new window.Image();img.onload=()=>{if(active)setImage(img)};img.src=url}).catch(console.error);return()=>{active=false}},[name]);return image?<KImage image={image} {...props}/>:null}
-const freshChar=():Character=>({id:uid(),name:'新角色',alias:'',gender:'',age:'',job:'',faction:'',appearance:'',personality:'',motivation:'',secret:'',backstory:'',notes:'',intro:'',tags:'',images:[]});
-function App(){const {project,dir,revision,setProject,edit}=useStore();const [screen,setScreen]=useState('地图');const [recent,setRecent]=useState<string[]>([]);const [mapId,setMapId]=useState('');const [charId,setCharId]=useState('');const [saveState,setSaveState]=useState('已保存');const [error,setError]=useState('');const saved=useRef(0);const queue=useRef<Promise<any>>(Promise.resolve());const state=useRef({project,revision});state.current={project,revision};
- const save=()=>{const s=state.current;if(!s.project||s.revision===saved.current)return queue.current;const snapshot=structuredClone(s.project);const rev=s.revision;setSaveState('保存中…');queue.current=queue.current.catch(()=>{}).then(()=>window.forge.save(snapshot)).then(()=>{saved.current=rev;setSaveState(state.current.revision===rev?'已保存':'待保存')}).catch(e=>{setSaveState('保存失败');setError(String(e));throw e});return queue.current};
- useEffect(()=>{window.forge.recent().then(setRecent);window.forge.onClose(()=>{save().then(()=>window.forge.closeReady()).catch(()=>alert('保存失败，请检查项目文件夹权限后重试。'))})},[]);
- useEffect(()=>{if(!project||!revision)return;setSaveState('待保存');const t=setTimeout(()=>{save().catch(()=>{})},3000);return()=>clearTimeout(t)},[revision]);
- async function changeProject(action:()=>Promise<any>){try{await save();const result=await action();if(result){saved.current=0;setProject(result.data,result.dir);setMapId(result.data.maps[0]?.id||'');setCharId('');setScreen('地图');setSaveState('已保存');window.forge.recent().then(setRecent)}}catch(e){setError(String(e))}}
- const m=project?.maps.find(x=>x.id===mapId)||project?.maps[0];const c=project?.characters.find(x=>x.id===charId);const updateMap=(fn:(m:MapData)=>void)=>edit(p=>{const mm=p.maps.find(x=>x.id===m?.id);if(mm)fn(mm)});
- return <><header><div className="brand"><b>✦</b><span>世界工坊 <small>WORLDFORGE</small></span></div><div className="top">{project?<><strong>{project.name}</strong><span>{dir}</span><em>{saveState}</em><button onClick={()=>save().catch(()=>{})}>保存</button></>:<span>你的世界，从一张地图开始</span>}<button onClick={()=>changeProject(window.forge.create)}>新建项目</button><button onClick={()=>changeProject(window.forge.open)}>打开项目</button></div></header>{error&&<div className="error" onClick={()=>setError('')}>{error}　×</div>}{!project?<div className="welcome"><div className="eyebrow">离线创作空间 / 版本 0.1</div><h1>为你的故事<br/><i>建造一个世界。</i></h1><p>地图、人物与关系，在同一个本地项目里慢慢生长。</p><div><button className="primary" onClick={()=>changeProject(window.forge.create)}>＋ 新建项目</button> <button onClick={()=>changeProject(window.forge.open)}>打开已有项目</button></div>{recent.length>0&&<section><h3>最近打开</h3>{recent.map(x=><button className="recent" key={x} onClick={()=>changeProject(()=>window.forge.openPath(x))}>{x}</button>)}</section>}</div>:<div className="layout"><aside><div className="label">工作空间</div>{['地图','人物','关系图'].map((s,i)=><button className={'nav '+(screen===s?'active':'')} key={s} onClick={()=>setScreen(s)}><span>{['▧','◉','⌘'][i]}</span>{s}</button>)}<div className="sidebottom">本地项目<br/><b>● 数据保存在本机</b></div></aside>{screen==='地图'&&m?<MapEditor key={m.id} map={m} maps={project.maps} update={updateMap} setMapId={setMapId} edit={edit}/>:screen==='人物'?<div className="people"><div className="people-list"><div className="heading"><div><span className="label">CHARACTERS</span><h2>人物档案</h2></div><button className="primary" onClick={()=>{const n=freshChar();edit(p=>p.characters.push(n));setCharId(n.id)}}>＋ 新建</button></div><input placeholder="搜索姓名、标签或势力" onChange={e=>{const v=e.target.value.toLowerCase();document.querySelectorAll<HTMLElement>('.person-card').forEach(el=>el.style.display=el.dataset.search?.includes(v)?'':'none')}}/>{project.characters.map(x=><div className={'person-card '+(x.id===charId?'selected':'')} data-search={`${x.name} ${x.tags} ${x.faction}`.toLowerCase()} key={x.id} onClick={()=>setCharId(x.id)}><div className="avatar">{x.images[0]?<Avatar name={x.images[0]}/>:x.name.slice(0,1)}</div><div><strong>{x.name}</strong><small>{x.faction||'未设置势力'}</small><p>{x.intro||'写下一句话简介'}</p></div></div>)}</div><div className="person-detail">{c?<><div className="heading"><div><span className="label">角色资料</span><h2>{c.name}</h2></div><button className="danger" onClick={()=>{const rel=project.relations.filter(r=>r.from===c.id||r.to===c.id);if(confirm(`删除「${c.name}」？将同时删除 ${rel.length} 条关系：${rel.map(r=>r.name).join('、')||'无'}。`)){edit(p=>{p.characters=p.characters.filter(x=>x.id!==c.id);p.relations=p.relations.filter(r=>r.from!==c.id&&r.to!==c.id)});setCharId('')}}}>删除角色</button></div><div className="fields">{([['name','姓名'],['alias','别名'],['gender','性别'],['age','年龄'],['job','身份 / 职业'],['faction','所属势力'],['intro','一句话简介'],['tags','标签（逗号分隔）'],['appearance','外貌描述'],['personality','性格'],['motivation','动机'],['secret','秘密'],['backstory','背景故事'],['notes','备注']] as [keyof Character,string][]).map(([key,label])=><label key={key}>{label}{['appearance','personality','motivation','secret','backstory','notes'].includes(key)?<textarea value={c[key] as string} onChange={e=>edit(p=>{const cc=p.characters.find(x=>x.id===c.id)!;(cc[key] as string)=e.target.value})}/>:<input value={c[key] as string} onChange={e=>edit(p=>{const cc=p.characters.find(x=>x.id===c.id)!;(cc[key] as string)=e.target.value})}/>}</label>)}</div><h3>人物图片</h3><div className="gallery">{c.images.map((img,i)=><div key={img+i}><Avatar name={img}/><button onClick={()=>edit(p=>{p.characters.find(x=>x.id===c.id)!.images.splice(i,1)})}>移除</button>{i===0&&<small>封面</small>}</div>)}<button onClick={async()=>{try{const name=await window.forge.asset();if(name)edit(p=>p.characters.find(x=>x.id===c.id)!.images.push(name))}catch(e){setError(String(e))}}}>＋ 导入图片</button></div></>:<div className="empty">选择一个人物，或新建你的第一个角色</div>}</div></div>:<Relations/>}</div>}</>}
-function Avatar({name}:{name:string}){const [url,setUrl]=useState('');useEffect(()=>{let a=true;window.forge.assetData(name).then(x=>{if(a)setUrl(x)}).catch(console.error);return()=>{a=false}},[name]);return url?<img src={url}/>:null}
-function useSize(){const ref=useRef<HTMLDivElement>(null);const [size,set]=useState({width:800,height:600});useEffect(()=>{if(!ref.current)return;const ro=new ResizeObserver(([e])=>set({width:e.contentRect.width,height:e.contentRect.height}));ro.observe(ref.current);return()=>ro.disconnect()},[]);return {ref,size}}
-function MapEditor({map,maps,update,setMapId,edit}:{map:MapData;maps:MapData[];update:(fn:(m:MapData)=>void)=>void;setMapId:(s:string)=>void;edit:(f:(p:any)=>void)=>void}){const {ref,size}=useSize();const [tool,setTool]=useState('画笔');const [color,setColor]=useState('#f5b777');const [stroke,setStroke]=useState(5);const [opacity,setOpacity]=useState(1);const [view,setView]=useState({x:20,y:20,scale:.2});const [selected,setSelected]=useState('');const [draft,setDraft]=useState<Shape|null>(null);const [space,setSpace]=useState(false);const drawing=useRef(false);const draftRef=useRef<Shape|null>(null);const stageRef=useRef<any>(null);
- useEffect(()=>{const down=(e:KeyboardEvent)=>{if(e.target instanceof HTMLInputElement||e.target instanceof HTMLTextAreaElement)return;if(e.code==='Space'){e.preventDefault();setSpace(true)}if(e.key==='Delete'&&selected){update(m=>m.shapes=m.shapes.filter(s=>s.id!==selected));setSelected('')}};const up=(e:KeyboardEvent)=>{if(e.code==='Space')setSpace(false)};window.addEventListener('keydown',down);window.addEventListener('keyup',up);return()=>{window.removeEventListener('keydown',down);window.removeEventListener('keyup',up)}},[selected]);
- const point=()=>{const st=stageRef.current;const p=st.getPointerPosition();return{x:(p.x-view.x)/view.scale,y:(p.y-view.y)/view.scale}};const fit=()=>{const scale=Math.min((size.width-60)/map.width,(size.height-60)/map.height);setView({scale,x:(size.width-map.width*scale)/2,y:(size.height-map.height*scale)/2})};
- function start(e:any){if(space||e.evt.button!==0)return;const p=point();if(tool==='选择'){if(e.target===e.target.getStage()||e.target.name()==='background')setSelected('');return}if(tool==='文字'||tool==='图钉'){const text=prompt(tool==='文字'?'输入标注文字':'输入图钉名称',tool==='文字'?'文字标注':'新地点');if(text){const shape:Shape={id:uid(),type:tool==='文字'?'text':'pin',...p,text,color,stroke,opacity};update(m=>m.shapes.push(shape))}return}const s:Shape={id:uid(),type:tool==='画笔'?'brush':'rect',...p,points:[0,0],width:0,height:0,color,stroke,opacity};drawing.current=true;draftRef.current=s;setDraft(s)}
- function move(){if(!drawing.current||!draftRef.current)return;const p=point();const d=draftRef.current;const next={...d,...(d.type==='brush'?{points:[...d.points!,p.x-d.x,p.y-d.y]}:{width:p.x-d.x,height:p.y-d.y})};draftRef.current=next;setDraft(next)}
- function end(){if(drawing.current&&draftRef.current){const d=draftRef.current;update(m=>m.shapes.push(d));drawing.current=false;draftRef.current=null;setDraft(null)}}
- const render=(s:Shape)=>{const common={key:s.id,x:s.x,y:s.y,opacity:s.opacity,onClick:()=>{if(tool==='选择')setSelected(s.id)},draggable:tool==='选择'&&!space,onDragEnd:(e:any)=>update(m=>{const a=m.shapes.find(x=>x.id===s.id);if(a){a.x=e.target.x();a.y=e.target.y()}})};return s.type==='brush'?<Line {...common} points={s.points||[]} stroke={s.color} strokeWidth={s.stroke} lineCap="round" lineJoin="round"/>:s.type==='rect'?<Rect {...common} width={s.width} height={s.height} stroke={s.color} strokeWidth={s.stroke}/>:s.type==='text'?<Text {...common} text={s.text} fill={s.color} fontSize={40}/>:<Group {...common}><Circle radius={18} fill={s.color}/><Text x={24} y={-16} text={s.text} fill={s.color} fontSize={32}/></Group>};
- return <><main className="workspace"><div className="canvasbar"><div><span className="label">WORLD MAP</span><h2>{map.name}</h2></div><div className="tools">{['选择','画笔','矩形','文字','图钉'].map(t=><button key={t} className={tool===t?'on':''} onClick={()=>setTool(t)}>{t}</button>)}</div><button onClick={fit}>适配全图</button></div><div className="canvas" ref={ref}><Stage ref={stageRef} width={size.width} height={size.height} x={view.x} y={view.y} scaleX={view.scale} scaleY={view.scale} draggable={space} onDragEnd={e=>{if(e.target===e.target.getStage())setView(v=>({...v,x:e.target.x(),y:e.target.y()}))}} onMouseDown={start} onMouseMove={move} onMouseUp={end} onWheel={e=>{e.evt.preventDefault();const p=e.target.getStage()!.getPointerPosition()!;const old=view.scale;const scale=Math.max(.03,Math.min(4,old*(e.evt.deltaY<0?1.1:1/1.1)));setView({scale,x:p.x-(p.x-view.x)*scale/old,y:p.y-(p.y-view.y)*scale/old})}}><Layer><Rect name="background" width={map.width} height={map.height} fill="#f4f0e8"/>{!map.background&&Array.from({length:Math.ceil(map.width/256)},(_,i)=><Line key={'x'+i} points={[i*256,0,i*256,map.height]} stroke="#d6d4d0" strokeWidth={2}/>)}{!map.background&&Array.from({length:Math.ceil(map.height/256)},(_,i)=><Line key={'y'+i} points={[0,i*256,map.width,i*256]} stroke="#d6d4d0" strokeWidth={2}/>)}<Img name={map.background} x={map.backgroundX} y={map.backgroundY} scaleX={map.backgroundScale} scaleY={map.backgroundScale} opacity={map.backgroundOpacity} listening={false}/>{map.shapes.map(render)}{draft&&render(draft)}</Layer></Stage><div className="hint">滚轮缩放 · 空格 + 拖动平移 · Delete 删除选中</div></div></main><aside className="properties"><div className="label">地图设置</div><h3>地图与画笔</h3><label>地图<select value={map.id} onChange={e=>setMapId(e.target.value)}>{maps.map(m=><option value={m.id} key={m.id}>{m.name}</option>)}</select></label><button onClick={()=>{const name=prompt('地图名称','新地图');if(name){const id=uid();edit(p=>p.maps.push({id,name,width:4096,height:4096,background:null,backgroundOpacity:.6,backgroundScale:1,backgroundX:0,backgroundY:0,shapes:[]}));setMapId(id)}}}>＋ 新建地图</button><label>地图名称<input value={map.name} onChange={e=>update(m=>m.name=e.target.value)}/></label><div className="row"><label>宽度<input type="number" value={map.width} onChange={e=>update(m=>m.width=Math.max(1,+e.target.value))}/></label><label>高度<input type="number" value={map.height} onChange={e=>update(m=>m.height=Math.max(1,+e.target.value))}/></label></div><button onClick={()=>{if(maps.length>1&&confirm('确定删除此地图？')){edit(p=>p.maps=p.maps.filter((x:MapData)=>x.id!==map.id));setMapId(maps.find(x=>x.id!==map.id)!.id)}}}>删除地图</button><hr/><button onClick={async()=>{try{const name=await window.forge.asset();if(name)update(m=>m.background=name)}catch(e){alert(String(e))}}}>导入底图</button>{map.background&&<><button onClick={()=>update(m=>m.background=null)}>移除底图</button><label>底图透明度<input type="range" min="0" max="1" step=".05" value={map.backgroundOpacity} onChange={e=>update(m=>m.backgroundOpacity=+e.target.value)}/></label><label>底图缩放<input type="number" min=".01" step=".1" value={map.backgroundScale} onChange={e=>update(m=>m.backgroundScale=+e.target.value)}/></label><div className="row"><label>X<input type="number" value={map.backgroundX} onChange={e=>update(m=>m.backgroundX=+e.target.value)}/></label><label>Y<input type="number" value={map.backgroundY} onChange={e=>update(m=>m.backgroundY=+e.target.value)}/></label></div></>}<hr/><label>画笔颜色<input type="color" value={color} onChange={e=>setColor(e.target.value)}/></label><label>粗细 {stroke}<input type="range" min="1" max="60" value={stroke} onChange={e=>setStroke(+e.target.value)}/></label><label>透明度<input type="range" min="0.05" max="1" step=".05" value={opacity} onChange={e=>setOpacity(+e.target.value)}/></label><p className="muted">选择工具后点击图形，可拖动位置或按 Delete 删除。</p></aside></>}
-function Relations(){const {project,edit}=useStore();const {ref,size}=useSize();const [from,setFrom]=useState('');const [to,setTo]=useState('');const [name,setName]=useState('朋友');const [color,setColor]=useState('#e9ab69');const [selected,setSelected]=useState('');const [view,setView]=useState({x:0,y:0,scale:1});const [space,setSpace]=useState(false);const chars=project!.characters;useEffect(()=>{const d=(e:KeyboardEvent)=>{if(e.target instanceof HTMLInputElement||e.target instanceof HTMLTextAreaElement)return;if(e.code==='Space'){e.preventDefault();setSpace(true)}if(e.key==='Delete'&&selected){edit(p=>p.relations=p.relations.filter(r=>r.id!==selected));setSelected('')}};const u=(e:KeyboardEvent)=>{if(e.code==='Space')setSpace(false)};window.addEventListener('keydown',d);window.addEventListener('keyup',u);return()=>{window.removeEventListener('keydown',d);window.removeEventListener('keyup',u)}},[selected]);const pos=(id:string)=>{const i=chars.findIndex(c=>c.id===id);const c=chars[i];return{x:c?.graphX??120+(i%4)*190,y:c?.graphY??120+Math.floor(i/4)*150}};
- return <><main className="workspace"><div className="canvasbar"><div><span className="label">RELATIONSHIPS</span><h2>人物关系图</h2></div><span className="muted">拖动人物调整位置 · 选中关系后按 Delete 删除</span></div><div className="canvas relation-canvas" ref={ref}><Stage width={size.width} height={size.height} x={view.x} y={view.y} scaleX={view.scale} scaleY={view.scale} draggable={space} onDragEnd={e=>{if(e.target===e.target.getStage())setView(v=>({...v,x:e.target.x(),y:e.target.y()}))}} onWheel={e=>{e.evt.preventDefault();const p=e.target.getStage()!.getPointerPosition()!;const scale=Math.max(.2,Math.min(3,view.scale*(e.evt.deltaY<0?1.1:1/1.1)));setView({scale,x:p.x-(p.x-view.x)*scale/view.scale,y:p.y-(p.y-view.y)*scale/view.scale})}}><Layer>{project!.relations.map(r=>{const a=pos(r.from),b=pos(r.to);return <Group key={r.id} onClick={()=>setSelected(r.id)}><Line points={[a.x,a.y,b.x,b.y]} stroke={r.id===selected?'#fff':r.color} strokeWidth={r.id===selected?4:2} hitStrokeWidth={20}/><Text x={(a.x+b.x)/2} y={(a.y+b.y)/2-18} text={r.name} fill={r.color} fontSize={16}/></Group>})}{chars.map(c=>{const p=pos(c.id);return <Group key={c.id} x={p.x} y={p.y} draggable={!space} onDragEnd={e=>edit(pr=>{const cc=pr.characters.find(x=>x.id===c.id)!;cc.graphX=e.target.x();cc.graphY=e.target.y()})}><Rect x={-65} y={-35} width={130} height={70} fill="#262d3b" stroke="#566073" cornerRadius={12}/><Circle x={-38} radius={19} fill="#c78a62"/>{c.images[0]&&<Img name={c.images[0]} x={-57} y={-19} width={38} height={38}/>}<Text x={-12} y={-8} width={72} text={c.name} fill="white" fontSize={15}/></Group>})}</Layer></Stage>{!chars.length&&<div className="hint">请先在人物档案中创建角色。</div>}</div></main><aside className="properties"><div className="label">关系设置</div><h3>建立人物关系</h3><label>角色 A<select value={from} onChange={e=>setFrom(e.target.value)}><option value="">选择角色</option>{chars.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></label><label>角色 B<select value={to} onChange={e=>setTo(e.target.value)}><option value="">选择角色</option>{chars.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></label><label>关系名称<input value={name} onChange={e=>setName(e.target.value)} placeholder="例如：师徒"/></label><label>连线颜色<input type="color" value={color} onChange={e=>setColor(e.target.value)}/></label><button className="primary" onClick={()=>{if(!from||!to||from===to||!name.trim()){alert('请选择两个不同的角色并填写关系名称');return}edit(p=>p.relations.push({id:uid(),from,to,name,color}))}}>＋ 创建关系</button><hr/><h3>已有关系</h3>{project!.relations.map(r=><button className="relation-item" key={r.id} onClick={()=>setSelected(r.id)}>{chars.find(c=>c.id===r.from)?.name} · {r.name} · {chars.find(c=>c.id===r.to)?.name}</button>)}</aside></>}
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { createRoot } from 'react-dom/client';
+import { Characters } from './Characters';
+import { MapEditor } from './MapEditor';
+import { Relations } from './Relations';
+import { readData, report } from './files';
+import { blankProject, demoProject, namify, projectExport, projectImport } from './project';
+import { useStore } from './store';
+import type { Backup, OpenedProject, RecentProject } from './types';
+import './style.css';
 
-createRoot(document.getElementById('root')!).render(<App/>);
+const screens = ['地图', '人物', '关系图'] as const;
+
+function App() {
+  const { project, dir, revision, undoStack, redoStack, open, close, edit, undo, redo } = useStore();
+  const [screen, setScreen] = useState<(typeof screens)[number]>('地图');
+  const [mapId, setMapId] = useState('');
+  const [characterId, setCharacterId] = useState('');
+  const [recent, setRecent] = useState<RecentProject[]>([]);
+  const [status, setStatus] = useState('已保存');
+  const [backups, setBackups] = useState<Backup[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const action = useRef(false);
+  const saved = useRef(0);
+  const queue = useRef(Promise.resolve());
+
+  const refresh = () => window.forge.recent().then(setRecent).catch(console.error);
+  const save = useCallback(() => {
+    const next = queue.current.catch(() => {}).then(async () => {
+      const snapshot = useStore.getState();
+      if (!snapshot.project || snapshot.revision === saved.current) return;
+      setStatus('保存中…');
+      try {
+        await window.forge.save(snapshot.project);
+        saved.current = snapshot.revision;
+        setStatus(useStore.getState().revision === snapshot.revision ? '已保存' : '待保存');
+      } catch (error) {
+        setStatus('保存失败');
+        throw error;
+      }
+    });
+    queue.current = next;
+    return next;
+  }, []);
+
+  useEffect(() => {
+    refresh();
+    window.forge.onFlush(close => save().then(() => {
+      if (close && !action.current) window.forge.closeReady();
+    }).catch(report));
+  }, [save]);
+
+  useEffect(() => {
+    if (!project || !revision) return;
+    setStatus('待保存');
+    const timer = setTimeout(() => save().catch(console.error), 3000);
+    return () => clearTimeout(timer);
+  }, [revision, dir, save]);
+
+  useEffect(() => {
+    function key(event: KeyboardEvent) {
+      if (action.current || !(event.ctrlKey || event.metaKey)) return;
+      const name = event.key.toLowerCase();
+      if (name === 's') { event.preventDefault(); save().catch(report); }
+      if ((event.target as HTMLElement)?.closest('input,textarea,select,[contenteditable]')) return;
+      if (name === 'z' || name === 'y') { event.preventDefault(); if (name === 'y' || event.shiftKey) redo(); else undo(); }
+    }
+    window.addEventListener('keydown', key);
+    return () => window.removeEventListener('keydown', key);
+  }, [save, undo, redo]);
+
+  async function run(fn: () => Promise<void>) {
+    if (action.current) return;
+    action.current = true;
+    setBusy(true);
+    try { await fn(); } catch (error) { report(error); }
+    finally { action.current = false; setBusy(false); }
+  }
+
+  function changeProject(fn: () => Promise<OpenedProject | null>) {
+    return run(async () => {
+      await save();
+      const result = await fn();
+      if (!result) return;
+      open(result);
+      saved.current = 0;
+      setStatus('已保存');
+      setScreen('地图');
+      setMapId(result.data.maps[0]?.id ?? '');
+      setCharacterId('');
+      setBackups(null);
+      refresh();
+    });
+  }
+
+  const newProject = (demo = false) => changeProject(() => window.forge.create(demo ? demoProject() : blankProject()));
+  const map = project?.maps.find(item => item.id === mapId) ?? project?.maps[0];
+  const openCharacter = (id: string) => { setCharacterId(id); setScreen('人物'); };
+  const openMap = (id: string) => { setMapId(id); setScreen('地图'); };
+  const mobile = window.forge.mobile;
+  const projectPicker = <label className="file-button">导入项目 JSON<input type="file" accept=".json,application/json" onChange={event => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (file) changeProject(async () => {
+      const { project, assets } = projectImport(await file.text());
+      return window.forge.create(project, assets);
+    });
+  }} /></label>;
+
+  return <>
+    <header>
+      <div className="brand"><b>✦</b><span>{mobile ? '傅里叶大帝的专属游戏制作工具箱' : '世界工坊'}<small>WORLDFORGE</small></span></div>
+      {project && <div className="top">
+        <input className="project-name" aria-label="项目名称" value={project.name} onChange={event => edit(value => { value.name = event.target.value; })} />
+        <span className="save-state" role="status">{status}</span>
+        <button aria-label="撤销" disabled={!undoStack.length || busy} onClick={undo}>↶</button>
+        <button aria-label="重做" disabled={!redoStack.length || busy} onClick={redo}>↷</button>
+        <button disabled={busy} onClick={() => save().catch(report)}>保存</button>
+      </div>}
+    </header>
+    {!project ? <div className="welcome">
+      <div className="welcome-title"><span>✦</span><h1>为你的故事<br /><i>建造一个世界。</i></h1></div>
+      <p>在本地绘制地图、记录人物，并把他们的故事连起来。</p>
+      <div className="inline">
+        <button className="primary" disabled={busy} onClick={() => newProject()}>＋ 新建项目</button>
+        {!mobile && <button disabled={busy} onClick={() => changeProject(window.forge.open)}>打开项目文件夹</button>}
+        <button disabled={busy} onClick={() => newProject(true)}>创建示例项目</button>
+        {projectPicker}
+      </div>
+      {recent.length > 0 && <section><h3>{mobile ? '本机项目' : '最近打开'}</h3>{recent.map(item =>
+        <button className="recent" disabled={busy} key={item.dir} onClick={() => changeProject(() => window.forge.openPath(item.dir))}>
+          <strong>{item.name}</strong>{!mobile && <small>{item.dir}</small>}
+        </button>)}</section>}
+    </div> : <>
+      <div className="layout" inert={busy}>
+        <nav aria-label="工作空间">
+          {screens.map((item, i) => <button className={'nav ' + (screen === item ? 'active' : '')} key={item} onClick={() => setScreen(item)}>
+            <span aria-hidden>{['▧', '◉', '⌘'][i]}</span>{item}</button>)}
+          <div className="nav-bottom">
+            <button onClick={() => run(async () => {
+              await save(); close(); setBackups(null); refresh();
+            })}>项目首页</button>
+            <button onClick={() => run(async () => {
+              const json = await projectExport(project);
+              await window.forge.exportFile({ name: namify(project.name, '.worldforge.json'), data: await readData(new Blob([json], { type: 'application/json' })) });
+            })}>导出 JSON</button>
+            <button onClick={() => run(async () => {
+              await save(); setBackups(await window.forge.backups());
+            })}>备份恢复</button>
+          </div>
+        </nav>
+        {screen === '地图' && map && <MapEditor key={dir + map.id} project={project} map={map} selectMap={openMap} openCharacter={openCharacter} />}
+        {screen === '人物' && <Characters project={project} id={characterId} select={setCharacterId} locate={openMap} />}
+        {screen === '关系图' && <Relations project={project} openCharacter={openCharacter} />}
+      </div>
+      {backups && <div className="overlay" onClick={() => setBackups(null)}>
+        <section className="dialog" role="dialog" aria-modal="true" aria-label="备份恢复" onClick={event => event.stopPropagation()}>
+          <div className="panel-title"><h2>项目备份</h2><button onClick={() => setBackups(null)}>关闭</button></div>
+          {backups.length ? <p>恢复会替换当前内容，并先为当前版本保留一份备份。</p> : <p>项目编辑并保存后会生成备份。</p>}
+          {backups.map(item => <div className="backup-row" key={item.file}><span>{new Date(item.date).toLocaleString()}</span>
+            <button disabled={busy} onClick={() => {
+              if (confirm('恢复到这份备份？')) changeProject(() => window.forge.restore(item.file));
+            }}>恢复</button></div>)}
+        </section>
+      </div>}
+    </>}
+  </>;
+}
+
+createRoot(document.getElementById('root')!).render(<App />);
